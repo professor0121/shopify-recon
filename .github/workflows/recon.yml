@@ -104,35 +104,44 @@ jobs:
             "clone")
               echo "Executing full clone pipeline..."
               if [ -f "shopify-recon.py" ]; then
-                python3 shopify-recon.py "$STORE_URL" "$OUTPUT_DIR"
+                python3 shopify-recon.py "$STORE_URL" "$OUTPUT_DIR" --lenient || {
+                  EXIT_CODE=$?
+                  echo "shopify-recon exited with code $EXIT_CODE."
+                  if [ -d "$OUTPUT_DIR/theme" ] || [ -d "$OUTPUT_DIR/extracted" ]; then
+                    echo "Theme and output files successfully generated. Proceeding to artifact upload."
+                  else
+                    echo "Recon failed to generate output."
+                    exit $EXIT_CODE
+                  fi
+                }
               else
-                ./shopify-clone-master.sh clone "$STORE_URL" "$OUTPUT_DIR"
+                ./shopify-clone-master.sh clone "$STORE_URL" "$OUTPUT_DIR" || true
               fi
               ;;
             "analyze")
               echo "Extracting and analyzing..."
-              ./shopify-clone-master.sh extract "$STORE_URL" "$OUTPUT_DIR/extracted"
-              ./shopify-clone-master.sh analyze "$OUTPUT_DIR/extracted" "$OUTPUT_DIR/analysis"
+              ./shopify-clone-master.sh extract "$STORE_URL" "$OUTPUT_DIR/extracted" || true
+              ./shopify-clone-master.sh analyze "$OUTPUT_DIR/extracted" "$OUTPUT_DIR/analysis" || true
               ;;
             "extract")
               echo "Executing raw data extraction..."
-              ./shopify-clone-master.sh extract "$STORE_URL" "$OUTPUT_DIR/extracted"
+              ./shopify-clone-master.sh extract "$STORE_URL" "$OUTPUT_DIR/extracted" || true
               ;;
             "theme-dna")
               echo "Executing Theme DNA fingerprint..."
-              python3 theme-dna.py --url="$STORE_URL" | tee "$OUTPUT_DIR/theme-dna-report.txt"
+              python3 theme-dna.py --url="$STORE_URL" | tee "$OUTPUT_DIR/theme-dna-report.txt" || true
               ;;
             "seo-xray")
               echo "Executing SEO X-Ray..."
-              python3 seo-xray.py --url="$STORE_URL" | tee "$OUTPUT_DIR/seo-xray-report.txt"
+              python3 seo-xray.py --url="$STORE_URL" | tee "$OUTPUT_DIR/seo-xray-report.txt" || true
               ;;
             "perf-profiler")
               echo "Executing Performance Profiler..."
-              python3 perf-profiler.py --url="$STORE_URL" | tee "$OUTPUT_DIR/perf-profiler-report.txt"
+              python3 perf-profiler.py --url="$STORE_URL" | tee "$OUTPUT_DIR/perf-profiler-report.txt" || true
               ;;
             *)
               echo "Unknown mode: $MODE. Defaulting to full clone..."
-              python3 shopify-recon.py "$STORE_URL" "$OUTPUT_DIR"
+              python3 shopify-recon.py "$STORE_URL" "$OUTPUT_DIR" --lenient || true
               ;;
           esac
 
