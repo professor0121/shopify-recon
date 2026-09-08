@@ -1,38 +1,26 @@
-# Python
+# Test outputs & generated clones
+rothys-com-clone/
+shopify-theme-master/
+test-gymshark/
+_multi-store-comparison/
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+*.pyc
 
-# Virtual Environments
-venv/
-ENV/
-env/
-
-# Output and local generated themes
-output/
+# Temp extraction outputs
+/tmp/
 *-clone/
-store-data/
-*.zip
+*-extract/
+*-deep-v*/
 
-# Local environment / secrets
+# Secrets (never commit)
+*.env
 .env
+credentials/
+*token*
+*secret*
+auth.json
+
+# OS junk
 .DS_Store
 Thumbs.db
+*.swp

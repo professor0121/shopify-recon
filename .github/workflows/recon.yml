@@ -14,7 +14,7 @@ on:
         type: choice
         options:
           - 'clone'         # Full clone: extract + analyze + generate Liquid theme + HTML website
-          - 'analyze'       # Run all 6 analyzers (DNA, CSS, Sections, Cart, Products, JS)
+          - 'analyze'       # Run all analyzers on extracted data
           - 'extract'       # Extract raw store data only
           - 'theme-dna'     # Theme fingerprint only
           - 'seo-xray'      # SEO analysis only
@@ -35,45 +35,48 @@ jobs:
   recon:
     name: Run Shopify Recon
     runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl bc
+
+      - name: Fallback Fetch Toolkit (if missing)
+        run: |
+          if [ ! -f "shopify-clone-master.sh" ] && [ ! -f "shopify-recon.py" ]; then
+            echo "Toolkit not detected in working tree. Cloning from upstream..."
+            git clone --depth 1 https://github.com/krickelsync/shopify-recon.git temp_recon
+            cp -rn temp_recon/* .
+            cp -n temp_recon/.* . 2>/dev/null || true
+            rm -rf temp_recon
+          else
+            echo "Shopify Recon toolkit is already present."
+          fi
+
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip'
-          cache-dependency-path: '**/requirements.txt'
-
-      - name: Fetch Recon Tools (if not in workspace)
-        run: |
-          if [ ! -f "shopify-clone-master.sh" ] && [ ! -f "shopify-recon.py" ]; then
-            echo "Local source scripts not found. Cloning shopify-recon repository..."
-            git clone https://github.com/krickelsync/shopify-recon.git temp_recon
-            rsync -av --exclude='.git' --exclude='.github' temp_recon/ ./
-            rm -rf temp_recon
-          else
-            echo "Source scripts detected in repository."
-          fi
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq curl rsync
 
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
+          else
+            pip install requests beautifulsoup4 lxml rich
           fi
-          pip install rich
 
       - name: Ensure Shell Scripts Are Executable
         run: |
-          chmod +x *.sh 2>/dev/null || true
+          chmod +x *.sh shopify-recon 2>/dev/null || true
 
       - name: Prepare Output Directory
         run: |
@@ -86,6 +89,11 @@ jobs:
           MODE="${{ inputs.mode }}"
           OUTPUT_DIR="./output"
 
+          # Ensure URL has protocol if missing
+          if [[ ! "$STORE_URL" =~ ^https?:// ]]; then
+            STORE_URL="https://$STORE_URL"
+          fi
+
           echo "=========================================="
           echo "Target Store: $STORE_URL"
           echo "Mode:         $MODE"
@@ -95,15 +103,20 @@ jobs:
           case "$MODE" in
             "clone")
               echo "Executing full clone pipeline..."
-              ./shopify-clone-master.sh clone "$STORE_URL" "$OUTPUT_DIR"
+              if [ -f "shopify-recon.py" ]; then
+                python3 shopify-recon.py "$STORE_URL" "$OUTPUT_DIR"
+              else
+                ./shopify-clone-master.sh clone "$STORE_URL" "$OUTPUT_DIR"
+              fi
               ;;
             "analyze")
-              echo "Executing analysis pipeline..."
-              ./shopify-clone-master.sh analyze "$STORE_URL" "$OUTPUT_DIR"
+              echo "Extracting and analyzing..."
+              ./shopify-clone-master.sh extract "$STORE_URL" "$OUTPUT_DIR/extracted"
+              ./shopify-clone-master.sh analyze "$OUTPUT_DIR/extracted" "$OUTPUT_DIR/analysis"
               ;;
             "extract")
               echo "Executing raw data extraction..."
-              ./shopify-clone-master.sh extract "$STORE_URL" "$OUTPUT_DIR"
+              ./shopify-clone-master.sh extract "$STORE_URL" "$OUTPUT_DIR/extracted"
               ;;
             "theme-dna")
               echo "Executing Theme DNA fingerprint..."
@@ -119,12 +132,12 @@ jobs:
               ;;
             *)
               echo "Unknown mode: $MODE. Defaulting to full clone..."
-              ./shopify-clone-master.sh clone "$STORE_URL" "$OUTPUT_DIR"
+              python3 shopify-recon.py "$STORE_URL" "$OUTPUT_DIR"
               ;;
           esac
 
           # IMPORTANT: No deployment step (deploy.sh is strictly never called).
-          # The theme is NOT uploaded to any Shopify store, S3, or third-party server.
+          # The theme is NOT uploaded to any Shopify store or external server.
 
       - name: Upload Output Folder as Downloadable Artifact
         uses: actions/upload-artifact@v4
@@ -146,14 +159,14 @@ jobs:
           echo "- **Remote Upload:** 🚫 Disabled (Theme is kept private and not uploaded anywhere)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📂 Output Contents" >> $GITHUB_STEP_SUMMARY
-          if [ -d "./output" ]; then
+          if [ -d "./output" ] && [ "$(ls -A ./output 2>/dev/null)" ]; then
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
             find ./output -maxdepth 2 | head -n 40 >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           else
-            echo "No output files found." >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ No output files found in ./output." >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📥 How to Download" >> $GITHUB_STEP_SUMMARY
-          echo "1. Scroll down to the **Artifacts** section at the bottom of this run summary." >> $GITHUB_STEP_SUMMARY
+          echo "1. Scroll down to the **Artifacts** section at the bottom of this run page." >> $GITHUB_STEP_SUMMARY
           echo "2. Click on **\`${{ inputs.artifact_name }}\`** to download the complete output as a \`.zip\` file." >> $GITHUB_STEP_SUMMARY
